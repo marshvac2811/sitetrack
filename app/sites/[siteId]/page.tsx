@@ -3,19 +3,37 @@
 import { useEffect, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { supabase } from '@/lib/supabase';
+import { CATEGORY_ICON, CATEGORY_IMAGE } from '@/lib/images';
 
 const TABS = ['Status', 'Team', 'Materials', 'Attendance', 'Cash', 'Milestones'] as const;
 type Tab = typeof TABS[number];
+
+// --- Toast pop-up shown after any on-site action succeeds ---
+function Toast({ message }: { message: string | null }) {
+  if (!message) return null;
+  return (
+    <div className="fixed bottom-5 right-5 z-50 bg-[#2b2622] text-[#f0ead9] px-4 py-3 rounded-lg shadow-lg border border-[#c9a15a]/40 flex items-center gap-2 animate-in fade-in slide-in-from-bottom-2">
+      <span className="text-[#c9a15a]">✓</span>
+      <span className="text-sm">{message}</span>
+    </div>
+  );
+}
 
 export default function SiteDetailPage() {
   const { siteId } = useParams<{ siteId: string }>();
   const router = useRouter();
   const [tab, setTab] = useState<Tab>('Status');
   const [site, setSite] = useState<any>(null);
+  const [toast, setToast] = useState<string | null>(null);
 
   useEffect(() => {
     supabase.from('sites').select('*').eq('id', siteId).single().then(({ data }) => setSite(data));
   }, [siteId]);
+
+  function notify(message: string) {
+    setToast(message);
+    setTimeout(() => setToast(null), 2500);
+  }
 
   async function deleteSite() {
     if (!confirm(`Delete "${site.name}"? This removes all its team, materials, attendance, cash, and milestone data. This cannot be undone.`)) return;
@@ -23,46 +41,75 @@ export default function SiteDetailPage() {
     router.push('/sites');
   }
 
-  if (!site) return <div className="p-8">Loading...</div>;
+  if (!site) return <div className="min-h-screen bg-[#f7f4ef] p-8 text-[#3a352f]">Loading...</div>;
 
   return (
-    <div className="p-6 max-w-5xl mx-auto">
-      <div className="flex items-start justify-between">
-        <div>
-          <h1 className="text-2xl font-semibold mb-1">{site.name}</h1>
-          <p className="text-sm text-gray-500 mb-4">{site.client} · {site.location}</p>
-        </div>
-        <button onClick={deleteSite} className="text-sm text-red-600 border border-red-200 rounded-lg px-3 py-1.5 hover:bg-red-50">
-          Delete site
-        </button>
-      </div>
-
-      <div className="flex gap-1 border-b mb-4 overflow-x-auto">
-        {TABS.map((t) => (
+    <div className="min-h-screen bg-[#f7f4ef]">
+      <div className="bg-[#2b2622] text-[#f0ead9]">
+        <div className="max-w-5xl mx-auto px-6 py-6 flex items-start justify-between">
+          <div className="flex items-center gap-3">
+            <div className="w-11 h-11 rounded-lg bg-gradient-to-br from-[#c9a15a] to-[#8a6d3a] flex items-center justify-center text-xl shrink-0">
+              {CATEGORY_ICON[site.category] ?? '🏗️'}
+            </div>
+            <div>
+              <p className="text-[10px] tracking-[0.25em] uppercase text-[#c9a15a] mb-0.5">Mysticape Concepts</p>
+              <h1 className="text-xl font-medium">{site.name}</h1>
+              <p className="text-sm text-[#c9bda2]">{site.client} · {site.location}</p>
+            </div>
+          </div>
           <button
-            key={t}
-            onClick={() => setTab(t)}
-            className={`px-3 py-2 text-sm whitespace-nowrap ${
-              tab === t ? 'border-b-2 border-black font-medium' : 'text-gray-500'
-            }`}
+            onClick={deleteSite}
+            className="text-xs text-rose-200 border border-rose-300/40 rounded-md px-3 py-1.5 hover:bg-rose-950/30 transition-colors"
           >
-            {t}
+            Delete site
           </button>
-        ))}
+        </div>
       </div>
 
-      {tab === 'Status' && <StatusTab site={site} siteId={siteId} onSaved={setSite} />}
-      {tab === 'Team' && <TeamTab siteId={siteId} />}
-      {tab === 'Materials' && <MaterialsTab siteId={siteId} />}
-      {tab === 'Attendance' && <AttendanceTab siteId={siteId} />}
-      {tab === 'Cash' && <CashTab siteId={siteId} />}
-      {tab === 'Milestones' && <MilestonesTab siteId={siteId} />}
+      {/* Category hero photo */}
+      <div className="relative h-32 md:h-44 w-full overflow-hidden">
+        <img
+          src={CATEGORY_IMAGE[site.category] ?? CATEGORY_IMAGE.office}
+          alt=""
+          className="absolute inset-0 w-full h-full object-cover"
+        />
+        <div className="absolute inset-0 bg-gradient-to-t from-[#f7f4ef] via-[#2b2622]/10 to-transparent" />
+      </div>
+
+      <div className="max-w-5xl mx-auto px-6 py-6">
+        <div className="flex gap-1 mb-6 overflow-x-auto bg-white border border-[#e6dfd0] rounded-lg p-1">
+          {TABS.map((t) => (
+            <button
+              key={t}
+              onClick={() => setTab(t)}
+              className={`px-4 py-2 text-sm whitespace-nowrap rounded-md transition-colors ${
+                tab === t
+                  ? 'bg-[#2b2622] text-[#f0ead9] font-medium'
+                  : 'text-[#8a8073] hover:bg-[#f7f4ef]'
+              }`}
+            >
+              {t}
+            </button>
+          ))}
+        </div>
+
+        <div className="bg-white border border-[#e6dfd0] rounded-xl p-6">
+          {tab === 'Status' && <StatusTab site={site} siteId={siteId} onSaved={setSite} notify={notify} />}
+          {tab === 'Team' && <TeamTab siteId={siteId} notify={notify} />}
+          {tab === 'Materials' && <MaterialsTab siteId={siteId} notify={notify} />}
+          {tab === 'Attendance' && <AttendanceTab siteId={siteId} notify={notify} />}
+          {tab === 'Cash' && <CashTab siteId={siteId} notify={notify} />}
+          {tab === 'Milestones' && <MilestonesTab siteId={siteId} notify={notify} />}
+        </div>
+      </div>
+
+      <Toast message={toast} />
     </div>
   );
 }
 
 // --- Status: work completed/pending, extra required, tentative completion date ---
-function StatusTab({ site, siteId, onSaved }: any) {
+function StatusTab({ site, siteId, onSaved, notify }: any) {
   const [form, setForm] = useState({
     work_completed_summary: site.work_completed_summary ?? '',
     work_pending_summary: site.work_pending_summary ?? '',
@@ -74,6 +121,7 @@ function StatusTab({ site, siteId, onSaved }: any) {
   async function save() {
     const { data } = await supabase.from('sites').update(form).eq('id', siteId).select().single();
     onSaved(data);
+    notify('Site status saved');
   }
 
   return (
@@ -126,7 +174,7 @@ function StatusTab({ site, siteId, onSaved }: any) {
           onChange={(e) => setForm({ ...form, tentative_completion_date: e.target.value })}
         />
       </div>
-      <button onClick={save} className="bg-black text-white px-4 py-2 rounded-lg text-sm">
+      <button onClick={save} className="bg-[#c9a15a] text-[#2b2622] hover:bg-[#d8b26e] transition-colors font-medium px-4 py-2 rounded-lg text-sm">
         Save
       </button>
     </div>
@@ -134,7 +182,7 @@ function StatusTab({ site, siteId, onSaved }: any) {
 }
 
 // --- Team: engineers / supervisors / labor ---
-function TeamTab({ siteId }: { siteId: string }) {
+function TeamTab({ siteId, notify }: { siteId: string; notify: (m: string) => void }) {
   const [rows, setRows] = useState<any[]>([]);
   const [form, setForm] = useState({ name: '', role: 'engineer', contact: '' });
 
@@ -144,7 +192,9 @@ function TeamTab({ siteId }: { siteId: string }) {
     setRows(data ?? []);
   }
   async function add() {
+    if (!form.name.trim()) return;
     await supabase.from('site_team').insert({ ...form, site_id: siteId });
+    notify(`${form.name} added to the team`);
     setForm({ name: '', role: 'engineer', contact: '' });
     load();
   }
@@ -162,7 +212,7 @@ function TeamTab({ siteId }: { siteId: string }) {
         </select>
         <input className="border rounded-lg p-2 flex-1" placeholder="Contact" value={form.contact}
           onChange={(e) => setForm({ ...form, contact: e.target.value })} />
-        <button onClick={add} className="bg-black text-white px-4 py-2 rounded-lg text-sm">Add</button>
+        <button onClick={add} className="bg-[#c9a15a] text-[#2b2622] hover:bg-[#d8b26e] transition-colors font-medium px-4 py-2 rounded-lg text-sm">Add</button>
       </div>
       <table className="w-full text-sm">
         <thead><tr className="text-left border-b"><th className="py-2">Name</th><th>Role</th><th>Contact</th></tr></thead>
@@ -179,7 +229,7 @@ function TeamTab({ siteId }: { siteId: string }) {
 }
 
 // --- Materials: ordered vs received ---
-function MaterialsTab({ siteId }: { siteId: string }) {
+function MaterialsTab({ siteId, notify }: { siteId: string; notify: (m: string) => void }) {
   const [rows, setRows] = useState<any[]>([]);
   const [form, setForm] = useState({ item: '', quantity: '', vendor: '', status: 'ordered' });
 
@@ -189,12 +239,15 @@ function MaterialsTab({ siteId }: { siteId: string }) {
     setRows(data ?? []);
   }
   async function add() {
+    if (!form.item.trim()) return;
     await supabase.from('site_materials').insert({ ...form, site_id: siteId, order_date: new Date().toISOString().slice(0, 10) });
+    notify(`Order placed: ${form.item}`);
     setForm({ item: '', quantity: '', vendor: '', status: 'ordered' });
     load();
   }
-  async function markReceived(id: string) {
+  async function markReceived(id: string, item: string) {
     await supabase.from('site_materials').update({ status: 'received', received_date: new Date().toISOString().slice(0, 10) }).eq('id', id);
+    notify(`${item} marked received`);
     load();
   }
 
@@ -207,7 +260,7 @@ function MaterialsTab({ siteId }: { siteId: string }) {
           onChange={(e) => setForm({ ...form, quantity: e.target.value })} />
         <input className="border rounded-lg p-2 flex-1" placeholder="Vendor" value={form.vendor}
           onChange={(e) => setForm({ ...form, vendor: e.target.value })} />
-        <button onClick={add} className="bg-black text-white px-4 py-2 rounded-lg text-sm">Add Order</button>
+        <button onClick={add} className="bg-[#c9a15a] text-[#2b2622] hover:bg-[#d8b26e] transition-colors font-medium px-4 py-2 rounded-lg text-sm">Add Order</button>
       </div>
       <table className="w-full text-sm">
         <thead><tr className="text-left border-b"><th className="py-2">Item</th><th>Qty</th><th>Vendor</th><th>Status</th><th></th></tr></thead>
@@ -217,7 +270,7 @@ function MaterialsTab({ siteId }: { siteId: string }) {
               <td className="py-2">{r.item}</td><td>{r.quantity}</td><td>{r.vendor}</td>
               <td className={r.status === 'received' ? 'text-green-600' : 'text-yellow-600'}>{r.status}</td>
               <td>{r.status !== 'received' && (
-                <button onClick={() => markReceived(r.id)} className="text-xs underline">Mark received</button>
+                <button onClick={() => markReceived(r.id, r.item)} className="text-xs underline">Mark received</button>
               )}</td>
             </tr>
           ))}
@@ -228,7 +281,7 @@ function MaterialsTab({ siteId }: { siteId: string }) {
 }
 
 // --- Attendance: daily checkbox grid per team member ---
-function AttendanceTab({ siteId }: { siteId: string }) {
+function AttendanceTab({ siteId, notify }: { siteId: string; notify: (m: string) => void }) {
   const [team, setTeam] = useState<any[]>([]);
   const [date, setDate] = useState(new Date().toISOString().slice(0, 10));
   const [marked, setMarked] = useState<Record<string, boolean>>({});
@@ -243,12 +296,13 @@ function AttendanceTab({ siteId }: { siteId: string }) {
     setMarked(m);
   }
 
-  async function toggle(memberId: string) {
+  async function toggle(memberId: string, name: string) {
     const present = !marked[memberId];
     await supabase.from('site_attendance').upsert(
       { site_id: siteId, team_member_id: memberId, date, present },
       { onConflict: 'team_member_id,date' }
     );
+    notify(`${name} marked ${present ? 'present' : 'absent'}`);
     setMarked({ ...marked, [memberId]: present });
   }
 
@@ -258,7 +312,7 @@ function AttendanceTab({ siteId }: { siteId: string }) {
       <div className="space-y-2">
         {team.map((m) => (
           <label key={m.id} className="flex items-center gap-3 border rounded-lg p-2">
-            <input type="checkbox" checked={!!marked[m.id]} onChange={() => toggle(m.id)} />
+            <input type="checkbox" checked={!!marked[m.id]} onChange={() => toggle(m.id, m.name)} />
             <span>{m.name}</span>
             <span className="text-xs text-gray-500 capitalize">({m.role})</span>
           </label>
@@ -269,7 +323,7 @@ function AttendanceTab({ siteId }: { siteId: string }) {
 }
 
 // --- Cash: in hand vs required, and account ---
-function CashTab({ siteId }: { siteId: string }) {
+function CashTab({ siteId, notify }: { siteId: string; notify: (m: string) => void }) {
   const [rows, setRows] = useState<any[]>([]);
   const [form, setForm] = useState({ cash_in_hand: '', cash_required: '', account: '', purpose: '' });
 
@@ -286,6 +340,7 @@ function CashTab({ siteId }: { siteId: string }) {
       site_id: siteId,
       date: new Date().toISOString().slice(0, 10),
     });
+    notify('Cash entry logged');
     setForm({ cash_in_hand: '', cash_required: '', account: '', purpose: '' });
     load();
   }
@@ -301,7 +356,7 @@ function CashTab({ siteId }: { siteId: string }) {
           onChange={(e) => setForm({ ...form, account: e.target.value })} />
         <input className="border rounded-lg p-2 flex-1" placeholder="Purpose" value={form.purpose}
           onChange={(e) => setForm({ ...form, purpose: e.target.value })} />
-        <button onClick={add} className="bg-black text-white px-4 py-2 rounded-lg text-sm">Log Entry</button>
+        <button onClick={add} className="bg-[#c9a15a] text-[#2b2622] hover:bg-[#d8b26e] transition-colors font-medium px-4 py-2 rounded-lg text-sm">Log Entry</button>
       </div>
       <table className="w-full text-sm">
         <thead><tr className="text-left border-b"><th className="py-2">Date</th><th>In hand</th><th>Required</th><th>Account</th><th>Purpose</th></tr></thead>
@@ -319,7 +374,7 @@ function CashTab({ siteId }: { siteId: string }) {
 }
 
 // --- Milestones: individual work items with tentative vs actual completion ---
-function MilestonesTab({ siteId }: { siteId: string }) {
+function MilestonesTab({ siteId, notify }: { siteId: string; notify: (m: string) => void }) {
   const [rows, setRows] = useState<any[]>([]);
   const [form, setForm] = useState({ work_item: '', tentative_date: '' });
 
@@ -329,12 +384,15 @@ function MilestonesTab({ siteId }: { siteId: string }) {
     setRows(data ?? []);
   }
   async function add() {
+    if (!form.work_item.trim()) return;
     await supabase.from('site_milestones').insert({ ...form, site_id: siteId });
+    notify(`Milestone added: ${form.work_item}`);
     setForm({ work_item: '', tentative_date: '' });
     load();
   }
-  async function markDone(id: string) {
+  async function markDone(id: string, item: string) {
     await supabase.from('site_milestones').update({ status: 'completed', actual_completion_date: new Date().toISOString().slice(0, 10) }).eq('id', id);
+    notify(`${item} marked complete`);
     load();
   }
 
@@ -345,7 +403,7 @@ function MilestonesTab({ siteId }: { siteId: string }) {
           onChange={(e) => setForm({ ...form, work_item: e.target.value })} />
         <input type="date" className="border rounded-lg p-2" value={form.tentative_date}
           onChange={(e) => setForm({ ...form, tentative_date: e.target.value })} />
-        <button onClick={add} className="bg-black text-white px-4 py-2 rounded-lg text-sm">Add</button>
+        <button onClick={add} className="bg-[#c9a15a] text-[#2b2622] hover:bg-[#d8b26e] transition-colors font-medium px-4 py-2 rounded-lg text-sm">Add</button>
       </div>
       <table className="w-full text-sm">
         <thead><tr className="text-left border-b"><th className="py-2">Work item</th><th>Tentative date</th><th>Status</th><th></th></tr></thead>
@@ -354,7 +412,7 @@ function MilestonesTab({ siteId }: { siteId: string }) {
             <tr key={r.id} className="border-b">
               <td className="py-2">{r.work_item}</td><td>{r.tentative_date}</td>
               <td className={r.status === 'completed' ? 'text-green-600' : 'text-gray-600'}>{r.status}</td>
-              <td>{r.status !== 'completed' && <button onClick={() => markDone(r.id)} className="text-xs underline">Mark done</button>}</td>
+              <td>{r.status !== 'completed' && <button onClick={() => markDone(r.id, r.work_item)} className="text-xs underline">Mark done</button>}</td>
             </tr>
           ))}
         </tbody>
