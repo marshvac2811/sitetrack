@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { useParams } from 'next/navigation';
+import { useParams, useRouter } from 'next/navigation';
 import { supabase } from '@/lib/supabase';
 
 const TABS = ['Status', 'Team', 'Materials', 'Attendance', 'Cash', 'Milestones'] as const;
@@ -9,6 +9,7 @@ type Tab = typeof TABS[number];
 
 export default function SiteDetailPage() {
   const { siteId } = useParams<{ siteId: string }>();
+  const router = useRouter();
   const [tab, setTab] = useState<Tab>('Status');
   const [site, setSite] = useState<any>(null);
 
@@ -16,12 +17,25 @@ export default function SiteDetailPage() {
     supabase.from('sites').select('*').eq('id', siteId).single().then(({ data }) => setSite(data));
   }, [siteId]);
 
+  async function deleteSite() {
+    if (!confirm(`Delete "${site.name}"? This removes all its team, materials, attendance, cash, and milestone data. This cannot be undone.`)) return;
+    await supabase.from('sites').delete().eq('id', siteId);
+    router.push('/sites');
+  }
+
   if (!site) return <div className="p-8">Loading...</div>;
 
   return (
     <div className="p-6 max-w-5xl mx-auto">
-      <h1 className="text-2xl font-semibold mb-1">{site.name}</h1>
-      <p className="text-sm text-gray-500 mb-4">{site.client} · {site.location}</p>
+      <div className="flex items-start justify-between">
+        <div>
+          <h1 className="text-2xl font-semibold mb-1">{site.name}</h1>
+          <p className="text-sm text-gray-500 mb-4">{site.client} · {site.location}</p>
+        </div>
+        <button onClick={deleteSite} className="text-sm text-red-600 border border-red-200 rounded-lg px-3 py-1.5 hover:bg-red-50">
+          Delete site
+        </button>
+      </div>
 
       <div className="flex gap-1 border-b mb-4 overflow-x-auto">
         {TABS.map((t) => (
