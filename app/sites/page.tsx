@@ -40,6 +40,10 @@ export default function SitesPage() {
 
   return (
     <div className="p-6 max-w-6xl mx-auto">
+      <div className="mb-6">
+        <p className="text-sm text-gray-500">Manoj Kumar Sharma — Operations Head</p>
+      </div>
+
       <div className="flex items-center justify-between mb-6">
         <h1 className="text-2xl font-semibold">Sites ({sites.length})</h1>
         <Link href="/sites/new" className="bg-black text-white px-4 py-2 rounded-lg text-sm">
