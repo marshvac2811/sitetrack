@@ -12,12 +12,20 @@ type SiteOverview = {
   location: string | null;
   category: string | null;
   status: string;
+  start_date: string | null;
   tentative_completion_date: string | null;
   team_count: number;
   materials_pending: number;
   latest_cash_in_hand: number | null;
   latest_cash_required: number | null;
 };
+
+function daysRemaining(target: string | null): number | null {
+  if (!target) return null;
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  return Math.ceil((new Date(target).getTime() - today.getTime()) / 86400000);
+}
 
 function Arrow({ positive }: { positive: boolean }) {
   return (
@@ -77,7 +85,7 @@ export default function SitesPage() {
       <div className="max-w-6xl mx-auto px-6 py-8">
         <div className="flex items-baseline justify-between mb-6">
           <h2 className="text-lg font-medium text-[#3a352f]">Live Sites ({sites.length})</h2>
-          <p className="text-xs text-[#8a8073]">Offices · Hotels · Workspaces — Pan-India</p>
+          <p className="text-xs text-[#5c5346]">Offices · Hotels · Workspaces — Pan-India</p>
         </div>
 
         {/* Pivot summary table — all sites, one row each, totals at bottom */}
@@ -85,7 +93,7 @@ export default function SitesPage() {
           <div className="mb-8 bg-white border border-[#e6dfd0] rounded-xl overflow-x-auto">
             <table className="w-full text-sm min-w-[720px]">
               <thead>
-                <tr className="border-b border-[#e6dfd0] bg-[#f7f4ef] text-[#8a8073] text-[10px] uppercase tracking-wide">
+                <tr className="border-b border-[#e6dfd0] bg-[#f7f4ef] text-[#5c5346] text-[10px] uppercase tracking-wide">
                   <th className="text-left px-4 py-3">Site</th>
                   <th className="text-left px-4 py-3">Status</th>
                   <th className="text-right px-4 py-3">Team</th>
@@ -94,6 +102,7 @@ export default function SitesPage() {
                   <th className="text-right px-4 py-3">Cash required</th>
                   <th className="text-right px-4 py-3">Cash delta</th>
                   <th className="text-left px-4 py-3">Target</th>
+                  <th className="text-right px-4 py-3">Days left</th>
                 </tr>
               </thead>
               <tbody>
@@ -132,10 +141,21 @@ export default function SitesPage() {
                       <td className={`px-4 py-2.5 text-right font-medium ${delta >= 0 ? 'text-emerald-700' : 'text-rose-700'}`}>
                         {delta >= 0 ? '▲' : '▼'} ₹{Math.abs(delta).toLocaleString('en-IN')}
                       </td>
-                      <td className="px-4 py-2.5 text-[#8a8073]">
+                      <td className="px-4 py-2.5 text-[#5c5346]">
                         {site.tentative_completion_date
                           ? new Date(site.tentative_completion_date).toLocaleDateString('en-IN')
                           : '—'}
+                      </td>
+                      <td className="px-4 py-2.5 text-right">
+                        {(() => {
+                          const d = daysRemaining(site.tentative_completion_date);
+                          if (d === null) return <span className="text-[#5c5346]">—</span>;
+                          return (
+                            <span className={d < 0 ? 'text-rose-700 font-medium' : 'text-[#3a352f]'}>
+                              {d < 0 ? `${Math.abs(d)}d overdue` : `${d}d left`}
+                            </span>
+                          );
+                        })()}
                       </td>
                     </tr>
                   );
@@ -156,6 +176,7 @@ export default function SitesPage() {
                   <td className="px-4 py-3 text-right text-[#c9a15a]">
                     ₹{Math.abs(sites.reduce((s, x) => s + (x.latest_cash_in_hand ?? 0) - (x.latest_cash_required ?? 0), 0)).toLocaleString('en-IN')}
                   </td>
+                  <td className="px-4 py-3"></td>
                   <td className="px-4 py-3"></td>
                 </tr>
               </tfoot>
@@ -204,17 +225,17 @@ export default function SitesPage() {
                     {site.status.replace('_', ' ')}
                   </span>
                 </div>
-                <p className="text-sm text-[#8a8073] mb-3">
+                <p className="text-sm text-[#5c5346] mb-3">
                   {site.client} · {site.location} {site.category && `· ${site.category}`}
                 </p>
 
                 <div className="grid grid-cols-2 gap-3 text-sm">
                   <div className="bg-[#f7f4ef] rounded-lg px-3 py-2">
-                    <p className="text-[10px] uppercase text-[#8a8073] mb-0.5">Team</p>
+                    <p className="text-[10px] uppercase text-[#5c5346] mb-0.5">Team</p>
                     <p className="font-medium text-[#2b2622]">{site.team_count}</p>
                   </div>
                   <div className="bg-[#f7f4ef] rounded-lg px-3 py-2">
-                    <p className="text-[10px] uppercase text-[#8a8073] mb-0.5 flex items-center gap-1">
+                    <p className="text-[10px] uppercase text-[#5c5346] mb-0.5 flex items-center gap-1">
                       Materials <Arrow positive={materialsHealthy} />
                     </p>
                     <p className="font-medium text-[#2b2622]">
@@ -222,7 +243,7 @@ export default function SitesPage() {
                     </p>
                   </div>
                   <div className="bg-[#f7f4ef] rounded-lg px-3 py-2 col-span-2">
-                    <p className="text-[10px] uppercase text-[#8a8073] mb-0.5 flex items-center gap-1">
+                    <p className="text-[10px] uppercase text-[#5c5346] mb-0.5 flex items-center gap-1">
                       Cash position <Arrow positive={cashHealthy} />
                     </p>
                     <p className={`font-medium ${cashHealthy ? 'text-emerald-700' : 'text-rose-700'}`}>
@@ -233,7 +254,7 @@ export default function SitesPage() {
                 </div>
 
                 {site.tentative_completion_date && (
-                  <p className="mt-3 text-xs text-[#8a8073]">
+                  <p className="mt-3 text-xs text-[#5c5346]">
                     Target completion: {new Date(site.tentative_completion_date).toLocaleDateString('en-IN')}
                   </p>
                 )}
@@ -243,7 +264,7 @@ export default function SitesPage() {
         </div>
 
         {sites.length === 0 && (
-          <div className="text-center py-16 text-[#8a8073]">
+          <div className="text-center py-16 text-[#5c5346]">
             <p className="mb-3">No sites added yet.</p>
             <Link href="/sites/new" className="text-[#8a6d3a] font-medium underline">
               Add your first site
