@@ -38,6 +38,8 @@ function Arrow({ positive }: { positive: boolean }) {
 export default function SitesPage() {
   const [sites, setSites] = useState<SiteOverview[]>([]);
   const [loading, setLoading] = useState(true);
+  const [sendingReport, setSendingReport] = useState(false);
+  const [reportMsg, setReportMsg] = useState<string | null>(null);
 
   useEffect(() => {
     load();
@@ -53,23 +55,71 @@ export default function SitesPage() {
     setLoading(false);
   }
 
+  async function sendReport() {
+    setSendingReport(true);
+    setReportMsg(null);
+    try {
+      const res = await fetch('/api/daily-report');
+      const data = await res.json();
+      if (res.ok) {
+        setReportMsg(`Report emailed — ${data.sitesReported} sites`);
+      } else {
+        setReportMsg(`Failed: ${data.error}`);
+      }
+    } catch {
+      setReportMsg('Failed to send report');
+    } finally {
+      setSendingReport(false);
+      setTimeout(() => setReportMsg(null), 5000);
+    }
+  }
+
+  function shareWhatsApp() {
+    const today = new Date().toLocaleDateString('en-IN');
+    let text = `*Mysticape Concepts — Daily Site Report — ${today}*\n\n`;
+    sites.forEach((s) => {
+      const inHand = s.latest_cash_in_hand ?? 0;
+      const required = s.latest_cash_required ?? 0;
+      const delta = inHand - required;
+      text += `• ${s.name} — ${s.status.replace('_', ' ')}\n`;
+      text += `  Materials pending: ${s.materials_pending} | Cash: ${delta >= 0 ? 'surplus' : 'SHORT'} ₹${Math.abs(delta).toLocaleString('en-IN')}\n`;
+    });
+    window.open(`https://wa.me/?text=${encodeURIComponent(text)}`, '_blank');
+  }
+
   if (loading) return <div className="min-h-screen bg-[#f7f4ef] p-8 text-[#3a352f]">Loading sites...</div>;
 
   return (
     <div className="min-h-screen bg-[#f7f4ef]">
       {/* Brand header band */}
       <div className="bg-[#2b2622] text-[#f0ead9]">
-        <div className="max-w-6xl mx-auto px-6 py-6 flex items-center justify-between">
+        <div className="max-w-6xl mx-auto px-6 py-6 flex items-center justify-between flex-wrap gap-3">
           <div>
             <p className="text-[10px] tracking-[0.25em] uppercase text-[#c9a15a] mb-1">Mysticape Concepts</p>
             <h1 className="text-xl font-medium">Manoj Kumar Sharma <span className="text-[#c9a15a]">·</span> Operations Head</h1>
           </div>
-          <Link
-            href="/sites/new"
-            className="bg-[#c9a15a] text-[#2b2622] px-4 py-2 rounded-md text-sm font-medium hover:bg-[#d8b26e] transition-colors"
-          >
-            + Add Site
-          </Link>
+          <div className="flex items-center gap-2 flex-wrap">
+            {reportMsg && <span className="text-xs text-[#c9a15a]">{reportMsg}</span>}
+            <button
+              onClick={shareWhatsApp}
+              className="bg-emerald-700 text-white px-3 py-2 rounded-md text-sm font-medium hover:bg-emerald-600 transition-colors"
+            >
+              WhatsApp Report
+            </button>
+            <button
+              onClick={sendReport}
+              disabled={sendingReport}
+              className="bg-white/10 border border-[#c9a15a]/40 text-[#f0ead9] px-3 py-2 rounded-md text-sm font-medium hover:bg-white/20 transition-colors disabled:opacity-50"
+            >
+              {sendingReport ? 'Sending…' : '✉ Email Report'}
+            </button>
+            <Link
+              href="/sites/new"
+              className="bg-[#c9a15a] text-[#2b2622] px-4 py-2 rounded-md text-sm font-medium hover:bg-[#d8b26e] transition-colors"
+            >
+              + Add Site
+            </Link>
+          </div>
         </div>
       </div>
 

@@ -31,22 +31,22 @@ export default function NewSitePage() {
       <div className="max-w-md mx-auto px-6 py-8">
         <div className="bg-white border border-[#e6dfd0] rounded-xl p-6 space-y-4">
           <div>
-            <label className="text-xs uppercase text-[#8a8073] mb-1 block">Site name</label>
+            <label className="text-xs uppercase text-[#5c5346] mb-1 block">Site name</label>
             <input className="border border-[#e6dfd0] rounded-lg p-2.5 w-full focus:outline-none focus:border-[#c9a15a]" placeholder="e.g. DLF Tower 3"
               value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} />
           </div>
           <div>
-            <label className="text-xs uppercase text-[#8a8073] mb-1 block">Client</label>
+            <label className="text-xs uppercase text-[#5c5346] mb-1 block">Client</label>
             <input className="border border-[#e6dfd0] rounded-lg p-2.5 w-full focus:outline-none focus:border-[#c9a15a]" placeholder="Client name"
               value={form.client} onChange={(e) => setForm({ ...form, client: e.target.value })} />
           </div>
           <div>
-            <label className="text-xs uppercase text-[#8a8073] mb-1 block">Location</label>
+            <label className="text-xs uppercase text-[#5c5346] mb-1 block">Location</label>
             <input className="border border-[#e6dfd0] rounded-lg p-2.5 w-full focus:outline-none focus:border-[#c9a15a]" placeholder="City / area"
               value={form.location} onChange={(e) => setForm({ ...form, location: e.target.value })} />
           </div>
           <div>
-            <label className="text-xs uppercase text-[#8a8073] mb-1 block">Category</label>
+            <label className="text-xs uppercase text-[#5c5346] mb-1 block">Category</label>
             <div className="grid grid-cols-3 gap-2">
               {[
                 { value: 'office', label: 'Office', icon: '🏢' },
