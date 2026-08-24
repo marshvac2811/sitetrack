@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useRef } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { supabase } from '@/lib/supabase';
 import { CATEGORY_ICON, CATEGORY_IMAGE } from '@/lib/images';
@@ -54,7 +54,7 @@ export default function SiteDetailPage() {
             <div>
               <p className="text-[10px] tracking-[0.25em] uppercase text-[#c9a15a] mb-0.5">Mysticape Concepts</p>
               <h1 className="text-xl font-medium">{site.name}</h1>
-              <p className="text-sm text-[#c9bda2]">{site.client} · {site.location}</p>
+              <p className="text-sm text-[#e8dfc9]">{site.client} · {site.location}</p>
             </div>
           </div>
           <button
@@ -85,7 +85,7 @@ export default function SiteDetailPage() {
               className={`px-4 py-2 text-sm whitespace-nowrap rounded-md transition-colors ${
                 tab === t
                   ? 'bg-[#2b2622] text-[#f0ead9] font-medium'
-                  : 'text-[#8a8073] hover:bg-[#f7f4ef]'
+                  : 'text-[#5c5346] hover:bg-[#f7f4ef]'
               }`}
             >
               {t}
@@ -108,12 +108,43 @@ export default function SiteDetailPage() {
   );
 }
 
+// --- Days elapsed / remaining banner ---
+function DaysBanner({ startDate, targetDate }: { startDate: string | null; targetDate: string | null }) {
+  if (!startDate && !targetDate) return null;
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const elapsed = startDate ? Math.floor((today.getTime() - new Date(startDate).getTime()) / 86400000) : null;
+  const remaining = targetDate ? Math.ceil((new Date(targetDate).getTime() - today.getTime()) / 86400000) : null;
+
+  return (
+    <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-6">
+      <div className="bg-[#faf6ec] border border-[#e6dfd0] rounded-lg px-4 py-3">
+        <p className="text-[10px] uppercase text-[#5c5346] mb-0.5">Days since start</p>
+        <p className="text-lg font-semibold text-[#2b2622]">{elapsed !== null ? `${elapsed} days` : '—'}</p>
+      </div>
+      <div className={`border rounded-lg px-4 py-3 ${remaining !== null && remaining < 0 ? 'bg-rose-50 border-rose-200' : 'bg-[#faf6ec] border-[#e6dfd0]'}`}>
+        <p className="text-[10px] uppercase text-[#5c5346] mb-0.5">Days remaining</p>
+        <p className={`text-lg font-semibold ${remaining !== null && remaining < 0 ? 'text-rose-700' : 'text-[#2b2622]'}`}>
+          {remaining !== null ? (remaining < 0 ? `${Math.abs(remaining)} days overdue` : `${remaining} days`) : '—'}
+        </p>
+      </div>
+      <div className="bg-[#faf6ec] border border-[#e6dfd0] rounded-lg px-4 py-3">
+        <p className="text-[10px] uppercase text-[#5c5346] mb-0.5">Target completion</p>
+        <p className="text-lg font-semibold text-[#2b2622]">
+          {targetDate ? new Date(targetDate).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' }) : '—'}
+        </p>
+      </div>
+    </div>
+  );
+}
+
 // --- Status: work completed/pending, extra required, tentative completion date ---
 function StatusTab({ site, siteId, onSaved, notify }: any) {
   const [form, setForm] = useState({
     work_completed_summary: site.work_completed_summary ?? '',
     work_pending_summary: site.work_pending_summary ?? '',
     extra_required: site.extra_required ?? '',
+    start_date: site.start_date ?? '',
     tentative_completion_date: site.tentative_completion_date ?? '',
     status: site.status ?? 'active',
   });
@@ -126,10 +157,11 @@ function StatusTab({ site, siteId, onSaved, notify }: any) {
 
   return (
     <div className="space-y-4">
+      <DaysBanner startDate={form.start_date} targetDate={form.tentative_completion_date} />
       <div>
         <label className="text-sm font-medium">Site status</label>
         <select
-          className="border rounded-lg p-2 w-full mt-1"
+          className="border border-[#c9bfa8] rounded-lg p-2.5 w-full mt-1 bg-white text-[#2b2622] placeholder:text-[#7a7160] focus:outline-none focus:ring-2 focus:ring-[#c9a15a] focus:border-transparent"
           value={form.status}
           onChange={(e) => setForm({ ...form, status: e.target.value })}
         >
@@ -141,7 +173,7 @@ function StatusTab({ site, siteId, onSaved, notify }: any) {
       <div>
         <label className="text-sm font-medium">Work completed</label>
         <textarea
-          className="border rounded-lg p-2 w-full mt-1"
+          className="border border-[#c9bfa8] rounded-lg p-2.5 w-full mt-1 bg-white text-[#2b2622] placeholder:text-[#7a7160] focus:outline-none focus:ring-2 focus:ring-[#c9a15a] focus:border-transparent"
           rows={3}
           value={form.work_completed_summary}
           onChange={(e) => setForm({ ...form, work_completed_summary: e.target.value })}
@@ -150,7 +182,7 @@ function StatusTab({ site, siteId, onSaved, notify }: any) {
       <div>
         <label className="text-sm font-medium">Work pending</label>
         <textarea
-          className="border rounded-lg p-2 w-full mt-1"
+          className="border border-[#c9bfa8] rounded-lg p-2.5 w-full mt-1 bg-white text-[#2b2622] placeholder:text-[#7a7160] focus:outline-none focus:ring-2 focus:ring-[#c9a15a] focus:border-transparent"
           rows={3}
           value={form.work_pending_summary}
           onChange={(e) => setForm({ ...form, work_pending_summary: e.target.value })}
@@ -159,20 +191,31 @@ function StatusTab({ site, siteId, onSaved, notify }: any) {
       <div>
         <label className="text-sm font-medium">Anything extra required</label>
         <textarea
-          className="border rounded-lg p-2 w-full mt-1"
+          className="border border-[#c9bfa8] rounded-lg p-2.5 w-full mt-1 bg-white text-[#2b2622] placeholder:text-[#7a7160] focus:outline-none focus:ring-2 focus:ring-[#c9a15a] focus:border-transparent"
           rows={2}
           value={form.extra_required}
           onChange={(e) => setForm({ ...form, extra_required: e.target.value })}
         />
       </div>
-      <div>
-        <label className="text-sm font-medium">Tentative completion date</label>
-        <input
-          type="date"
-          className="border rounded-lg p-2 w-full mt-1"
-          value={form.tentative_completion_date ?? ''}
-          onChange={(e) => setForm({ ...form, tentative_completion_date: e.target.value })}
-        />
+      <div className="grid grid-cols-2 gap-4">
+        <div>
+          <label className="text-sm font-medium">Site start date</label>
+          <input
+            type="date"
+            className="border border-[#c9bfa8] rounded-lg p-2.5 w-full mt-1 bg-white text-[#2b2622] placeholder:text-[#7a7160] focus:outline-none focus:ring-2 focus:ring-[#c9a15a] focus:border-transparent"
+            value={form.start_date ?? ''}
+            onChange={(e) => setForm({ ...form, start_date: e.target.value })}
+          />
+        </div>
+        <div>
+          <label className="text-sm font-medium">Tentative completion date</label>
+          <input
+            type="date"
+            className="border border-[#c9bfa8] rounded-lg p-2.5 w-full mt-1 bg-white text-[#2b2622] placeholder:text-[#7a7160] focus:outline-none focus:ring-2 focus:ring-[#c9a15a] focus:border-transparent"
+            value={form.tentative_completion_date ?? ''}
+            onChange={(e) => setForm({ ...form, tentative_completion_date: e.target.value })}
+          />
+        </div>
       </div>
       <button onClick={save} className="bg-[#c9a15a] text-[#2b2622] hover:bg-[#d8b26e] transition-colors font-medium px-4 py-2 rounded-lg text-sm">
         Save
@@ -202,15 +245,15 @@ function TeamTab({ siteId, notify }: { siteId: string; notify: (m: string) => vo
   return (
     <div>
       <div className="flex gap-2 mb-4">
-        <input className="border rounded-lg p-2 flex-1" placeholder="Name" value={form.name}
+        <input className="border border-[#c9bfa8] rounded-lg p-2.5 flex-1 bg-white text-[#2b2622] placeholder:text-[#7a7160] focus:outline-none focus:ring-2 focus:ring-[#c9a15a] focus:border-transparent" placeholder="Name" value={form.name}
           onChange={(e) => setForm({ ...form, name: e.target.value })} />
-        <select className="border rounded-lg p-2" value={form.role}
+        <select className="border border-[#c9bfa8] rounded-lg p-2.5 bg-white text-[#2b2622] focus:outline-none focus:ring-2 focus:ring-[#c9a15a] focus:border-transparent" value={form.role}
           onChange={(e) => setForm({ ...form, role: e.target.value })}>
           <option value="engineer">Engineer</option>
           <option value="supervisor">Supervisor</option>
           <option value="labor">Labor</option>
         </select>
-        <input className="border rounded-lg p-2 flex-1" placeholder="Contact" value={form.contact}
+        <input className="border border-[#c9bfa8] rounded-lg p-2.5 flex-1 bg-white text-[#2b2622] placeholder:text-[#7a7160] focus:outline-none focus:ring-2 focus:ring-[#c9a15a] focus:border-transparent" placeholder="Contact" value={form.contact}
           onChange={(e) => setForm({ ...form, contact: e.target.value })} />
         <button onClick={add} className="bg-[#c9a15a] text-[#2b2622] hover:bg-[#d8b26e] transition-colors font-medium px-4 py-2 rounded-lg text-sm">Add</button>
       </div>
@@ -254,11 +297,11 @@ function MaterialsTab({ siteId, notify }: { siteId: string; notify: (m: string) 
   return (
     <div>
       <div className="flex gap-2 mb-4">
-        <input className="border rounded-lg p-2 flex-1" placeholder="Item" value={form.item}
+        <input className="border border-[#c9bfa8] rounded-lg p-2.5 flex-1 bg-white text-[#2b2622] placeholder:text-[#7a7160] focus:outline-none focus:ring-2 focus:ring-[#c9a15a] focus:border-transparent" placeholder="Item" value={form.item}
           onChange={(e) => setForm({ ...form, item: e.target.value })} />
-        <input className="border rounded-lg p-2 w-24" placeholder="Qty" value={form.quantity}
+        <input className="border border-[#c9bfa8] rounded-lg p-2.5 w-24 bg-white text-[#2b2622] placeholder:text-[#7a7160] focus:outline-none focus:ring-2 focus:ring-[#c9a15a] focus:border-transparent" placeholder="Qty" value={form.quantity}
           onChange={(e) => setForm({ ...form, quantity: e.target.value })} />
-        <input className="border rounded-lg p-2 flex-1" placeholder="Vendor" value={form.vendor}
+        <input className="border border-[#c9bfa8] rounded-lg p-2.5 flex-1 bg-white text-[#2b2622] placeholder:text-[#7a7160] focus:outline-none focus:ring-2 focus:ring-[#c9a15a] focus:border-transparent" placeholder="Vendor" value={form.vendor}
           onChange={(e) => setForm({ ...form, vendor: e.target.value })} />
         <button onClick={add} className="bg-[#c9a15a] text-[#2b2622] hover:bg-[#d8b26e] transition-colors font-medium px-4 py-2 rounded-lg text-sm">Add Order</button>
       </div>
@@ -280,44 +323,139 @@ function MaterialsTab({ siteId, notify }: { siteId: string; notify: (m: string) 
   );
 }
 
-// --- Attendance: daily checkbox grid per team member ---
+// --- Attendance: daily check-in with live photo + GPS location proof ---
 function AttendanceTab({ siteId, notify }: { siteId: string; notify: (m: string) => void }) {
   const [team, setTeam] = useState<any[]>([]);
   const [date, setDate] = useState(new Date().toISOString().slice(0, 10));
-  const [marked, setMarked] = useState<Record<string, boolean>>({});
+  const [records, setRecords] = useState<Record<string, any>>({});
+  const [busyId, setBusyId] = useState<string | null>(null);
+  const fileInputs = useRef<Record<string, HTMLInputElement | null>>({});
 
   useEffect(() => { load(); }, [siteId, date]);
   async function load() {
     const { data: teamData } = await supabase.from('site_team').select('*').eq('site_id', siteId).eq('active', true);
     setTeam(teamData ?? []);
     const { data: att } = await supabase.from('site_attendance').select('*').eq('site_id', siteId).eq('date', date);
-    const m: Record<string, boolean> = {};
-    (att ?? []).forEach((a: any) => { m[a.team_member_id] = a.present; });
-    setMarked(m);
+    const m: Record<string, any> = {};
+    (att ?? []).forEach((a: any) => { m[a.team_member_id] = a; });
+    setRecords(m);
   }
 
-  async function toggle(memberId: string, name: string) {
-    const present = !marked[memberId];
+  function getLocation(): Promise<{ lat: number | null; lng: number | null }> {
+    return new Promise((resolve) => {
+      if (!navigator.geolocation) return resolve({ lat: null, lng: null });
+      navigator.geolocation.getCurrentPosition(
+        (pos) => resolve({ lat: pos.coords.latitude, lng: pos.coords.longitude }),
+        () => resolve({ lat: null, lng: null }),
+        { timeout: 8000 }
+      );
+    });
+  }
+
+  function startCheckIn(memberId: string) {
+    fileInputs.current[memberId]?.click();
+  }
+
+  async function handlePhoto(memberId: string, name: string, file: File | undefined) {
+    if (!file) return;
+    setBusyId(memberId);
+    try {
+      const { lat, lng } = await getLocation();
+      const path = `${siteId}/${memberId}/${date}-${Date.now()}.jpg`;
+      const { error: uploadError } = await supabase.storage.from('attendance-photos').upload(path, file);
+      if (uploadError) {
+        notify('Photo upload failed — check storage bucket setup');
+        setBusyId(null);
+        return;
+      }
+      const { data: urlData } = supabase.storage.from('attendance-photos').getPublicUrl(path);
+      await supabase.from('site_attendance').upsert(
+        { site_id: siteId, team_member_id: memberId, date, present: true, photo_url: urlData.publicUrl, latitude: lat, longitude: lng },
+        { onConflict: 'team_member_id,date' }
+      );
+      notify(`${name} checked in${lat ? ' with location' : ''}`);
+      load();
+    } finally {
+      setBusyId(null);
+    }
+  }
+
+  async function markAbsent(memberId: string, name: string) {
     await supabase.from('site_attendance').upsert(
-      { site_id: siteId, team_member_id: memberId, date, present },
+      { site_id: siteId, team_member_id: memberId, date, present: false },
       { onConflict: 'team_member_id,date' }
     );
-    notify(`${name} marked ${present ? 'present' : 'absent'}`);
-    setMarked({ ...marked, [memberId]: present });
+    notify(`${name} marked absent`);
+    load();
   }
 
   return (
     <div>
-      <input type="date" className="border rounded-lg p-2 mb-4" value={date} onChange={(e) => setDate(e.target.value)} />
+      <input type="date" className="border border-[#c9bfa8] rounded-lg p-2.5 mb-4 bg-white text-[#2b2622] focus:outline-none focus:ring-2 focus:ring-[#c9a15a] focus:border-transparent" value={date} onChange={(e) => setDate(e.target.value)} />
       <div className="space-y-2">
-        {team.map((m) => (
-          <label key={m.id} className="flex items-center gap-3 border rounded-lg p-2">
-            <input type="checkbox" checked={!!marked[m.id]} onChange={() => toggle(m.id, m.name)} />
-            <span>{m.name}</span>
-            <span className="text-xs text-gray-500 capitalize">({m.role})</span>
-          </label>
-        ))}
+        {team.map((m) => {
+          const rec = records[m.id];
+          return (
+            <div key={m.id} className="flex items-center gap-3 border border-[#e6dfd0] rounded-lg p-2.5">
+              {rec?.photo_url ? (
+                <img src={rec.photo_url} alt="" className="w-10 h-10 rounded-full object-cover border border-[#e6dfd0]" />
+              ) : (
+                <div className="w-10 h-10 rounded-full bg-[#f7f4ef] border border-[#e6dfd0] flex items-center justify-center text-xs text-[#7a7160]">
+                  {m.name.slice(0, 1)}
+                </div>
+              )}
+              <div className="flex-1">
+                <span className="text-[#2b2622]">{m.name}</span>
+                <span className="text-xs text-[#5c5346] capitalize ml-2">({m.role})</span>
+                {rec?.latitude && (
+                  <a
+                    href={`https://www.google.com/maps?q=${rec.latitude},${rec.longitude}`}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="block text-xs text-[#8a6d3a] underline"
+                  >
+                    📍 View check-in location
+                  </a>
+                )}
+              </div>
+
+              <input
+                ref={(el) => { fileInputs.current[m.id] = el; }}
+                type="file"
+                accept="image/*"
+                capture="environment"
+                className="hidden"
+                onChange={(e) => handlePhoto(m.id, m.name, e.target.files?.[0])}
+              />
+
+              {rec?.present ? (
+                <>
+                  <span className="text-xs text-emerald-700 font-medium">Present</span>
+                  <button onClick={() => markAbsent(m.id, m.name)} className="text-xs text-[#5c5346] underline">
+                    Mark absent
+                  </button>
+                </>
+              ) : (
+                <>
+                  <button
+                    onClick={() => startCheckIn(m.id)}
+                    disabled={busyId === m.id}
+                    className="bg-[#c9a15a] text-[#2b2622] hover:bg-[#d8b26e] transition-colors font-medium px-3 py-1.5 rounded-lg text-xs disabled:opacity-50"
+                  >
+                    {busyId === m.id ? 'Checking in…' : '📷 Check in'}
+                  </button>
+                  {rec && rec.present === false && (
+                    <span className="text-xs text-rose-700">Absent</span>
+                  )}
+                </>
+              )}
+            </div>
+          );
+        })}
       </div>
+      <p className="text-xs text-[#7a7160] mt-3">
+        "Check in" opens your camera and tags your current location — used as proof of on-site presence.
+      </p>
     </div>
   );
 }
@@ -348,13 +486,13 @@ function CashTab({ siteId, notify }: { siteId: string; notify: (m: string) => vo
   return (
     <div>
       <div className="flex gap-2 mb-4 flex-wrap">
-        <input className="border rounded-lg p-2 w-32" placeholder="Cash in hand" value={form.cash_in_hand}
+        <input className="border border-[#c9bfa8] rounded-lg p-2.5 w-32 bg-white text-[#2b2622] placeholder:text-[#7a7160] focus:outline-none focus:ring-2 focus:ring-[#c9a15a] focus:border-transparent" placeholder="Cash in hand" value={form.cash_in_hand}
           onChange={(e) => setForm({ ...form, cash_in_hand: e.target.value })} />
-        <input className="border rounded-lg p-2 w-32" placeholder="Cash required" value={form.cash_required}
+        <input className="border border-[#c9bfa8] rounded-lg p-2.5 w-32 bg-white text-[#2b2622] placeholder:text-[#7a7160] focus:outline-none focus:ring-2 focus:ring-[#c9a15a] focus:border-transparent" placeholder="Cash required" value={form.cash_required}
           onChange={(e) => setForm({ ...form, cash_required: e.target.value })} />
-        <input className="border rounded-lg p-2 flex-1" placeholder="Account" value={form.account}
+        <input className="border border-[#c9bfa8] rounded-lg p-2.5 flex-1 bg-white text-[#2b2622] placeholder:text-[#7a7160] focus:outline-none focus:ring-2 focus:ring-[#c9a15a] focus:border-transparent" placeholder="Account" value={form.account}
           onChange={(e) => setForm({ ...form, account: e.target.value })} />
-        <input className="border rounded-lg p-2 flex-1" placeholder="Purpose" value={form.purpose}
+        <input className="border border-[#c9bfa8] rounded-lg p-2.5 flex-1 bg-white text-[#2b2622] placeholder:text-[#7a7160] focus:outline-none focus:ring-2 focus:ring-[#c9a15a] focus:border-transparent" placeholder="Purpose" value={form.purpose}
           onChange={(e) => setForm({ ...form, purpose: e.target.value })} />
         <button onClick={add} className="bg-[#c9a15a] text-[#2b2622] hover:bg-[#d8b26e] transition-colors font-medium px-4 py-2 rounded-lg text-sm">Log Entry</button>
       </div>
@@ -399,9 +537,9 @@ function MilestonesTab({ siteId, notify }: { siteId: string; notify: (m: string)
   return (
     <div>
       <div className="flex gap-2 mb-4">
-        <input className="border rounded-lg p-2 flex-1" placeholder="Work item" value={form.work_item}
+        <input className="border border-[#c9bfa8] rounded-lg p-2.5 flex-1 bg-white text-[#2b2622] placeholder:text-[#7a7160] focus:outline-none focus:ring-2 focus:ring-[#c9a15a] focus:border-transparent" placeholder="Work item" value={form.work_item}
           onChange={(e) => setForm({ ...form, work_item: e.target.value })} />
-        <input type="date" className="border rounded-lg p-2" value={form.tentative_date}
+        <input type="date" className="border border-[#c9bfa8] rounded-lg p-2.5 bg-white text-[#2b2622] focus:outline-none focus:ring-2 focus:ring-[#c9a15a] focus:border-transparent" value={form.tentative_date}
           onChange={(e) => setForm({ ...form, tentative_date: e.target.value })} />
         <button onClick={add} className="bg-[#c9a15a] text-[#2b2622] hover:bg-[#d8b26e] transition-colors font-medium px-4 py-2 rounded-lg text-sm">Add</button>
       </div>
