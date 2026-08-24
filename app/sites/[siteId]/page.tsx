@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useRef } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { supabase } from '@/lib/supabase';
 import { CATEGORY_ICON, CATEGORY_IMAGE } from '@/lib/images';
@@ -323,44 +323,139 @@ function MaterialsTab({ siteId, notify }: { siteId: string; notify: (m: string) 
   );
 }
 
-// --- Attendance: daily checkbox grid per team member ---
+// --- Attendance: daily check-in with live photo + GPS location proof ---
 function AttendanceTab({ siteId, notify }: { siteId: string; notify: (m: string) => void }) {
   const [team, setTeam] = useState<any[]>([]);
   const [date, setDate] = useState(new Date().toISOString().slice(0, 10));
-  const [marked, setMarked] = useState<Record<string, boolean>>({});
+  const [records, setRecords] = useState<Record<string, any>>({});
+  const [busyId, setBusyId] = useState<string | null>(null);
+  const fileInputs = useRef<Record<string, HTMLInputElement | null>>({});
 
   useEffect(() => { load(); }, [siteId, date]);
   async function load() {
     const { data: teamData } = await supabase.from('site_team').select('*').eq('site_id', siteId).eq('active', true);
     setTeam(teamData ?? []);
     const { data: att } = await supabase.from('site_attendance').select('*').eq('site_id', siteId).eq('date', date);
-    const m: Record<string, boolean> = {};
-    (att ?? []).forEach((a: any) => { m[a.team_member_id] = a.present; });
-    setMarked(m);
+    const m: Record<string, any> = {};
+    (att ?? []).forEach((a: any) => { m[a.team_member_id] = a; });
+    setRecords(m);
   }
 
-  async function toggle(memberId: string, name: string) {
-    const present = !marked[memberId];
+  function getLocation(): Promise<{ lat: number | null; lng: number | null }> {
+    return new Promise((resolve) => {
+      if (!navigator.geolocation) return resolve({ lat: null, lng: null });
+      navigator.geolocation.getCurrentPosition(
+        (pos) => resolve({ lat: pos.coords.latitude, lng: pos.coords.longitude }),
+        () => resolve({ lat: null, lng: null }),
+        { timeout: 8000 }
+      );
+    });
+  }
+
+  function startCheckIn(memberId: string) {
+    fileInputs.current[memberId]?.click();
+  }
+
+  async function handlePhoto(memberId: string, name: string, file: File | undefined) {
+    if (!file) return;
+    setBusyId(memberId);
+    try {
+      const { lat, lng } = await getLocation();
+      const path = `${siteId}/${memberId}/${date}-${Date.now()}.jpg`;
+      const { error: uploadError } = await supabase.storage.from('attendance-photos').upload(path, file);
+      if (uploadError) {
+        notify('Photo upload failed — check storage bucket setup');
+        setBusyId(null);
+        return;
+      }
+      const { data: urlData } = supabase.storage.from('attendance-photos').getPublicUrl(path);
+      await supabase.from('site_attendance').upsert(
+        { site_id: siteId, team_member_id: memberId, date, present: true, photo_url: urlData.publicUrl, latitude: lat, longitude: lng },
+        { onConflict: 'team_member_id,date' }
+      );
+      notify(`${name} checked in${lat ? ' with location' : ''}`);
+      load();
+    } finally {
+      setBusyId(null);
+    }
+  }
+
+  async function markAbsent(memberId: string, name: string) {
     await supabase.from('site_attendance').upsert(
-      { site_id: siteId, team_member_id: memberId, date, present },
+      { site_id: siteId, team_member_id: memberId, date, present: false },
       { onConflict: 'team_member_id,date' }
     );
-    notify(`${name} marked ${present ? 'present' : 'absent'}`);
-    setMarked({ ...marked, [memberId]: present });
+    notify(`${name} marked absent`);
+    load();
   }
 
   return (
     <div>
       <input type="date" className="border border-[#c9bfa8] rounded-lg p-2.5 mb-4 bg-white text-[#2b2622] focus:outline-none focus:ring-2 focus:ring-[#c9a15a] focus:border-transparent" value={date} onChange={(e) => setDate(e.target.value)} />
       <div className="space-y-2">
-        {team.map((m) => (
-          <label key={m.id} className="flex items-center gap-3 border rounded-lg p-2">
-            <input type="checkbox" checked={!!marked[m.id]} onChange={() => toggle(m.id, m.name)} />
-            <span>{m.name}</span>
-            <span className="text-xs text-[#5c5346] capitalize">({m.role})</span>
-          </label>
-        ))}
+        {team.map((m) => {
+          const rec = records[m.id];
+          return (
+            <div key={m.id} className="flex items-center gap-3 border border-[#e6dfd0] rounded-lg p-2.5">
+              {rec?.photo_url ? (
+                <img src={rec.photo_url} alt="" className="w-10 h-10 rounded-full object-cover border border-[#e6dfd0]" />
+              ) : (
+                <div className="w-10 h-10 rounded-full bg-[#f7f4ef] border border-[#e6dfd0] flex items-center justify-center text-xs text-[#7a7160]">
+                  {m.name.slice(0, 1)}
+                </div>
+              )}
+              <div className="flex-1">
+                <span className="text-[#2b2622]">{m.name}</span>
+                <span className="text-xs text-[#5c5346] capitalize ml-2">({m.role})</span>
+                {rec?.latitude && (
+                  <a
+                    href={`https://www.google.com/maps?q=${rec.latitude},${rec.longitude}`}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="block text-xs text-[#8a6d3a] underline"
+                  >
+                    📍 View check-in location
+                  </a>
+                )}
+              </div>
+
+              <input
+                ref={(el) => { fileInputs.current[m.id] = el; }}
+                type="file"
+                accept="image/*"
+                capture="environment"
+                className="hidden"
+                onChange={(e) => handlePhoto(m.id, m.name, e.target.files?.[0])}
+              />
+
+              {rec?.present ? (
+                <>
+                  <span className="text-xs text-emerald-700 font-medium">Present</span>
+                  <button onClick={() => markAbsent(m.id, m.name)} className="text-xs text-[#5c5346] underline">
+                    Mark absent
+                  </button>
+                </>
+              ) : (
+                <>
+                  <button
+                    onClick={() => startCheckIn(m.id)}
+                    disabled={busyId === m.id}
+                    className="bg-[#c9a15a] text-[#2b2622] hover:bg-[#d8b26e] transition-colors font-medium px-3 py-1.5 rounded-lg text-xs disabled:opacity-50"
+                  >
+                    {busyId === m.id ? 'Checking in…' : '📷 Check in'}
+                  </button>
+                  {rec && rec.present === false && (
+                    <span className="text-xs text-rose-700">Absent</span>
+                  )}
+                </>
+              )}
+            </div>
+          );
+        })}
       </div>
+      <p className="text-xs text-[#7a7160] mt-3">
+        "Check in" opens your camera and tags your current location — used as proof of on-site presence.
+      </p>
     </div>
   );
 }
