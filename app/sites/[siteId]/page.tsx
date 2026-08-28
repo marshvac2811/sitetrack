@@ -5,7 +5,7 @@ import { useParams, useRouter } from 'next/navigation';
 import { supabase } from '@/lib/supabase';
 import { CATEGORY_ICON, CATEGORY_IMAGE } from '@/lib/images';
 
-const TABS = ['Status', 'Team', 'Materials', 'Attendance', 'Cash', 'Milestones'] as const;
+const TABS = ['Status', 'BOQ Plan', 'Team', 'Materials', 'Attendance', 'Cash', 'Milestones'] as const;
 type Tab = typeof TABS[number];
 
 // --- Toast pop-up shown after any on-site action succeeds ---
@@ -95,6 +95,7 @@ export default function SiteDetailPage() {
 
         <div className="bg-white border border-[#e6dfd0] rounded-xl p-6">
           {tab === 'Status' && <StatusTab site={site} siteId={siteId} onSaved={setSite} notify={notify} />}
+          {tab === 'BOQ Plan' && <BOQPlanTab siteId={siteId} siteName={site.name} notify={notify} />}
           {tab === 'Team' && <TeamTab siteId={siteId} notify={notify} />}
           {tab === 'Materials' && <MaterialsTab siteId={siteId} notify={notify} />}
           {tab === 'Attendance' && <AttendanceTab siteId={siteId} notify={notify} />}
@@ -138,7 +139,279 @@ function DaysBanner({ startDate, targetDate }: { startDate: string | null; targe
   );
 }
 
-// --- Status: work completed/pending, extra required, tentative completion date ---
+// --- BOQ Plan: work items -> auto-calculated materials -> request -> supply -> balance ---
+function BOQPlanTab({ siteId, siteName, notify }: { siteId: string; siteName: string; notify: (m: string) => void }) {
+  const [workTypes, setWorkTypes] = useState<any[]>([]);
+  const [items, setItems] = useState<any[]>([]);
+  const [materialsByItem, setMaterialsByItem] = useState<Record<string, any[]>>({});
+  const [requestsByMaterial, setRequestsByMaterial] = useState<Record<string, any[]>>({});
+  const [suppliesByMaterial, setSuppliesByMaterial] = useState<Record<string, any[]>>({});
+  const [expanded, setExpanded] = useState<string | null>(null);
+  const [newItem, setNewItem] = useState({ work_type_id: '', label: '', boq_quantity: '' });
+  const [actionRow, setActionRow] = useState<{ materialId: string; kind: 'request' | 'supply' } | null>(null);
+  const [actionForm, setActionForm] = useState({ quantity: '', by: '', vendor: '' });
+
+  useEffect(() => { load(); }, [siteId]);
+
+  async function load() {
+    const { data: wt } = await supabase.from('work_types').select('*').order('name');
+    setWorkTypes(wt ?? []);
+    const { data: wi } = await supabase.from('site_work_items').select('*, work_types(name, unit)').eq('site_id', siteId).order('created_at');
+    setItems(wi ?? []);
+    if (wi && wi.length > 0) {
+      const { data: mats } = await supabase.from('site_work_materials').select('*').in('site_work_item_id', wi.map((i: any) => i.id));
+      const grouped: Record<string, any[]> = {};
+      (mats ?? []).forEach((m: any) => { grouped[m.site_work_item_id] = grouped[m.site_work_item_id] ?? []; grouped[m.site_work_item_id].push(m); });
+      setMaterialsByItem(grouped);
+
+      const matIds = (mats ?? []).map((m: any) => m.id);
+      if (matIds.length > 0) {
+        const { data: reqs } = await supabase.from('material_requests').select('*').in('site_work_material_id', matIds);
+        const rg: Record<string, any[]> = {};
+        (reqs ?? []).forEach((r: any) => { rg[r.site_work_material_id] = rg[r.site_work_material_id] ?? []; rg[r.site_work_material_id].push(r); });
+        setRequestsByMaterial(rg);
+
+        const { data: sups } = await supabase.from('material_supplies').select('*').in('site_work_material_id', matIds);
+        const sg: Record<string, any[]> = {};
+        (sups ?? []).forEach((s: any) => { sg[s.site_work_material_id] = sg[s.site_work_material_id] ?? []; sg[s.site_work_material_id].push(s); });
+        setSuppliesByMaterial(sg);
+      }
+    }
+  }
+
+  async function addWorkItem() {
+    if (!newItem.work_type_id || !newItem.boq_quantity) return;
+    const workType = workTypes.find((w) => w.id === newItem.work_type_id);
+    const { data: created } = await supabase.from('site_work_items').insert({
+      site_id: siteId,
+      work_type_id: newItem.work_type_id,
+      label: newItem.label || workType?.name,
+      boq_quantity: Number(newItem.boq_quantity),
+    }).select().single();
+
+    if (created) {
+      const { data: recipe } = await supabase.from('work_type_materials').select('*').eq('work_type_id', newItem.work_type_id);
+      const qty = Number(newItem.boq_quantity);
+      const materialRows = (recipe ?? []).map((r: any) => ({
+        site_work_item_id: created.id,
+        material_name: r.material_name,
+        unit: r.unit,
+        required_quantity: Math.round(qty * r.consumption_per_unit * (1 + r.wastage_percent / 100) * 100) / 100,
+      }));
+      if (materialRows.length > 0) await supabase.from('site_work_materials').insert(materialRows);
+      notify(`${created.label} added — ${materialRows.length} materials calculated`);
+    }
+    setNewItem({ work_type_id: '', label: '', boq_quantity: '' });
+    load();
+  }
+
+  function sumQty(rows: any[] | undefined, field: string) {
+    return (rows ?? []).reduce((s, r) => s + Number(r[field] ?? 0), 0);
+  }
+
+  function openAction(materialId: string, kind: 'request' | 'supply') {
+    setActionRow({ materialId, kind });
+    setActionForm({ quantity: '', by: '', vendor: '' });
+  }
+
+  async function submitAction(material: any) {
+    if (!actionRow || !actionForm.quantity) return;
+    const qty = Number(actionForm.quantity);
+    if (actionRow.kind === 'request') {
+      const alreadySupplied = sumQty(suppliesByMaterial[material.id], 'supplied_quantity');
+      const balance = material.required_quantity - alreadySupplied;
+      await supabase.from('material_requests').insert({
+        site_work_material_id: material.id,
+        requested_quantity: qty,
+        requested_by: actionForm.by,
+      });
+      if (qty > balance) {
+        notify(`⚠ ${material.material_name}: requested ${qty} exceeds remaining BOQ balance of ${balance}`);
+      } else {
+        notify(`Request logged: ${material.material_name} — ${qty} ${material.unit}`);
+      }
+    } else {
+      await supabase.from('material_supplies').insert({
+        site_work_material_id: material.id,
+        supplied_quantity: qty,
+        ordered_quantity: qty,
+        vendor: actionForm.vendor,
+      });
+      notify(`Supply logged: ${material.material_name} — ${qty} ${material.unit}`);
+    }
+    setActionRow(null);
+    load();
+  }
+
+  async function exportExcel() {
+    const XLSX = await import('xlsx');
+    const wb = XLSX.utils.book_new();
+
+    // Summary sheet across all work items
+    const summaryRows: any[] = [];
+    for (const item of items) {
+      const materials = materialsByItem[item.id] ?? [];
+      materials.forEach((m) => {
+        const requested = sumQty(requestsByMaterial[m.id], 'requested_quantity');
+        const supplied = sumQty(suppliesByMaterial[m.id], 'supplied_quantity');
+        summaryRows.push({
+          'Work Item': item.label,
+          'Material': m.material_name,
+          'Unit': m.unit,
+          'Required (BOQ)': m.required_quantity,
+          'Requested': requested,
+          'Supplied': supplied,
+          'Balance': m.required_quantity - supplied,
+        });
+      });
+    }
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(summaryRows), 'Summary');
+
+    // One sheet per work item with full request/supply history
+    for (const item of items) {
+      const materials = materialsByItem[item.id] ?? [];
+      const rows: any[] = [];
+      materials.forEach((m) => {
+        const requested = sumQty(requestsByMaterial[m.id], 'requested_quantity');
+        const supplied = sumQty(suppliesByMaterial[m.id], 'supplied_quantity');
+        rows.push({ Material: m.material_name, Unit: m.unit, 'Required (BOQ)': m.required_quantity, Requested: requested, Supplied: supplied, Balance: m.required_quantity - supplied });
+        (requestsByMaterial[m.id] ?? []).forEach((r: any) => {
+          rows.push({ Material: `  ↳ Request: ${m.material_name}`, Unit: m.unit, 'Required (BOQ)': '', Requested: r.requested_quantity, Supplied: '', Balance: `by ${r.requested_by || '—'} on ${r.request_date}` });
+        });
+        (suppliesByMaterial[m.id] ?? []).forEach((s: any) => {
+          rows.push({ Material: `  ↳ Supply: ${m.material_name}`, Unit: m.unit, 'Required (BOQ)': '', Requested: '', Supplied: s.supplied_quantity, Balance: `vendor ${s.vendor || '—'} on ${s.supply_date}` });
+        });
+      });
+      const sheetName = (item.label || 'Item').slice(0, 31).replace(/[\\/*?:[\]]/g, '');
+      XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(rows), sheetName || 'Item');
+    }
+
+    // Attendance sheet
+    const { data: attendance } = await supabase
+      .from('site_attendance')
+      .select('date, present, latitude, longitude, site_team(name, role)')
+      .eq('site_id', siteId)
+      .order('date', { ascending: false });
+    const attRows = (attendance ?? []).map((a: any) => ({
+      Date: a.date,
+      Name: a.site_team?.name ?? '',
+      Role: a.site_team?.role ?? '',
+      Present: a.present ? 'Yes' : 'No',
+      Location: a.latitude ? `https://www.google.com/maps?q=${a.latitude},${a.longitude}` : '',
+    }));
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(attRows), 'Attendance');
+
+    XLSX.writeFile(wb, `${siteName.replace(/[^a-z0-9]/gi, '-')}-BOQ-Report.xlsx`);
+    notify('Excel report downloaded');
+  }
+
+  return (
+    <div>
+      <div className="flex justify-end mb-3">
+        <button onClick={exportExcel} className="bg-emerald-700 text-white hover:bg-emerald-600 transition-colors font-medium px-3 py-2 rounded-lg text-xs">
+          📊 Export to Excel
+        </button>
+      </div>
+      <div className="bg-[#faf6ec] border border-[#e6dfd0] rounded-lg p-4 mb-5">
+        <p className="text-xs uppercase text-[#5c5346] mb-2">Add a BOQ work item</p>
+        <div className="flex gap-2 flex-wrap">
+          <select className="border border-[#c9bfa8] rounded-lg p-2.5 bg-white text-[#2b2622] focus:outline-none focus:ring-2 focus:ring-[#c9a15a]"
+            value={newItem.work_type_id} onChange={(e) => setNewItem({ ...newItem, work_type_id: e.target.value })}>
+            <option value="">Select work type…</option>
+            {workTypes.map((w) => <option key={w.id} value={w.id}>{w.name} (per {w.unit})</option>)}
+          </select>
+          <input className="border border-[#c9bfa8] rounded-lg p-2.5 flex-1 min-w-[140px] bg-white text-[#2b2622] focus:outline-none focus:ring-2 focus:ring-[#c9a15a]" placeholder="Label (optional, e.g. 2nd Floor)"
+            value={newItem.label} onChange={(e) => setNewItem({ ...newItem, label: e.target.value })} />
+          <input className="border border-[#c9bfa8] rounded-lg p-2.5 w-32 bg-white text-[#2b2622] focus:outline-none focus:ring-2 focus:ring-[#c9a15a]" placeholder="BOQ quantity"
+            value={newItem.boq_quantity} onChange={(e) => setNewItem({ ...newItem, boq_quantity: e.target.value })} />
+          <button onClick={addWorkItem} className="bg-[#c9a15a] text-[#2b2622] hover:bg-[#d8b26e] transition-colors font-medium px-4 py-2.5 rounded-lg text-sm">
+            Add & Calculate
+          </button>
+        </div>
+        {workTypes.length === 0 && (
+          <p className="text-xs text-rose-700 mt-2">
+            No work types yet — <a href="/work-library" target="_blank" className="underline">set up your Work Library</a> first (e.g. Gypsum Partition, Tile Flooring).
+          </p>
+        )}
+      </div>
+
+      <div className="space-y-3">
+        {items.map((item) => {
+          const materials = materialsByItem[item.id] ?? [];
+          return (
+            <div key={item.id} className="border border-[#e6dfd0] rounded-lg overflow-hidden">
+              <button onClick={() => setExpanded(expanded === item.id ? null : item.id)} className="w-full flex items-center justify-between px-4 py-3 bg-[#f7f4ef] text-left">
+                <span className="font-medium text-[#2b2622]">{item.label} <span className="text-xs text-[#5c5346]">— {item.boq_quantity} {item.work_types?.unit}</span></span>
+                <span className="text-xs text-[#8a6d3a]">{expanded === item.id ? 'Hide ▲' : `${materials.length} materials ▼`}</span>
+              </button>
+              {expanded === item.id && (
+                <div className="p-4 overflow-x-auto">
+                  <table className="w-full text-sm min-w-[600px]">
+                    <thead>
+                      <tr className="text-left text-[#5c5346] text-xs uppercase border-b border-[#e6dfd0]">
+                        <th className="py-2">Material</th>
+                        <th className="text-right">Required</th>
+                        <th className="text-right">Requested</th>
+                        <th className="text-right">Supplied</th>
+                        <th className="text-right">Balance</th>
+                        <th></th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {materials.map((m) => {
+                        const requested = sumQty(requestsByMaterial[m.id], 'requested_quantity');
+                        const supplied = sumQty(suppliesByMaterial[m.id], 'supplied_quantity');
+                        const balance = m.required_quantity - supplied;
+                        return (
+                          <>
+                            <tr key={m.id} className="border-b border-[#f0ead9]">
+                              <td className="py-2 text-[#2b2622]">{m.material_name} <span className="text-[#5c5346] text-xs">({m.unit})</span></td>
+                              <td className="text-right text-[#2b2622]">{m.required_quantity}</td>
+                              <td className="text-right text-[#5c5346]">{requested}</td>
+                              <td className="text-right text-[#5c5346]">{supplied}</td>
+                              <td className={`text-right font-medium ${balance < 0 ? 'text-rose-700' : 'text-emerald-700'}`}>{balance}</td>
+                              <td className="text-right whitespace-nowrap">
+                                <button onClick={() => openAction(m.id, 'request')} className="text-xs text-[#8a6d3a] underline mr-2">Request</button>
+                                <button onClick={() => openAction(m.id, 'supply')} className="text-xs text-[#8a6d3a] underline">Supply</button>
+                              </td>
+                            </tr>
+                            {actionRow?.materialId === m.id && (
+                              <tr className="bg-[#faf6ec]">
+                                <td colSpan={6} className="p-3">
+                                  <div className="flex gap-2 items-center flex-wrap">
+                                    <span className="text-xs font-medium text-[#2b2622] capitalize">{actionRow.kind} quantity:</span>
+                                    <input className="border border-[#c9bfa8] rounded-lg p-2 w-28 bg-white text-[#2b2622] text-sm focus:outline-none focus:ring-2 focus:ring-[#c9a15a]" placeholder="Qty"
+                                      value={actionForm.quantity} onChange={(e) => setActionForm({ ...actionForm, quantity: e.target.value })} />
+                                    {actionRow.kind === 'request' ? (
+                                      <input className="border border-[#c9bfa8] rounded-lg p-2 flex-1 min-w-[120px] bg-white text-[#2b2622] text-sm focus:outline-none focus:ring-2 focus:ring-[#c9a15a]" placeholder="Requested by"
+                                        value={actionForm.by} onChange={(e) => setActionForm({ ...actionForm, by: e.target.value })} />
+                                    ) : (
+                                      <input className="border border-[#c9bfa8] rounded-lg p-2 flex-1 min-w-[120px] bg-white text-[#2b2622] text-sm focus:outline-none focus:ring-2 focus:ring-[#c9a15a]" placeholder="Vendor"
+                                        value={actionForm.vendor} onChange={(e) => setActionForm({ ...actionForm, vendor: e.target.value })} />
+                                    )}
+                                    <button onClick={() => submitAction(m)} className="bg-[#c9a15a] text-[#2b2622] hover:bg-[#d8b26e] transition-colors font-medium px-3 py-2 rounded-lg text-xs">Save</button>
+                                    <button onClick={() => setActionRow(null)} className="text-xs text-[#5c5346] underline">Cancel</button>
+                                  </div>
+                                </td>
+                              </tr>
+                            )}
+                          </>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
+          );
+        })}
+        {items.length === 0 && <p className="text-sm text-[#5c5346]">No BOQ work items added for this site yet.</p>}
+      </div>
+    </div>
+  );
+}
+
+
 function StatusTab({ site, siteId, onSaved, notify }: any) {
   const [form, setForm] = useState({
     work_completed_summary: site.work_completed_summary ?? '',

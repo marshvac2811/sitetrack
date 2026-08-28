@@ -114,6 +114,12 @@ export default function SitesPage() {
               {sendingReport ? 'Sending…' : '✉ Email Report'}
             </button>
             <Link
+              href="/work-library"
+              className="bg-white/10 border border-[#c9a15a]/40 text-[#f0ead9] px-3 py-2 rounded-md text-sm font-medium hover:bg-white/20 transition-colors"
+            >
+              📚 Work Library
+            </Link>
+            <Link
               href="/sites/new"
               className="bg-[#c9a15a] text-[#2b2622] px-4 py-2 rounded-md text-sm font-medium hover:bg-[#d8b26e] transition-colors"
             >
