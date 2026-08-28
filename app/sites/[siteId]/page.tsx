@@ -375,7 +375,7 @@ function BOQPlanTab({ siteId, siteName, notify }: { siteId: string; siteName: st
                                 <button onClick={() => openAction(m.id, 'supply')} className="text-xs text-[#8a6d3a] underline">Supply</button>
                               </td>
                             </tr>
-                            {actionRow?.materialId === m.id && (
+                            {actionRow && actionRow.materialId === m.id && (
                               <tr className="bg-[#faf6ec]">
                                 <td colSpan={6} className="p-3">
                                   <div className="flex gap-2 items-center flex-wrap">
