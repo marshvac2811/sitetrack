@@ -150,7 +150,40 @@ function BOQPlanTab({ siteId, siteName, notify }: { siteId: string; siteName: st
   const [newItem, setNewItem] = useState({ work_type_id: '', label: '', boq_quantity: '' });
   const [actionRow, setActionRow] = useState<{ materialId: string; kind: 'request' | 'supply' } | null>(null);
   const [actionForm, setActionForm] = useState({ quantity: '', by: '', vendor: '' });
+const [aiDescription, setAiDescription] = useState('');
+const [aiResult, setAiResult] = useState<any>(null);
+const [aiLoading, setAiLoading] = useState(false);
 
+async function generateAIMaterials() {
+  if (!aiDescription.trim()) {
+    notify('Enter a BOQ description first');
+    return;
+  }
+
+  setAiLoading(true);
+  setAiResult(null);
+
+  try {
+    const res = await fetch('/api/ai-materials', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ boqText: aiDescription }),
+    });
+
+    const data = await res.json();
+
+    if (!res.ok || !data.success) {
+      throw new Error(data.error || 'AI request failed');
+    }
+
+    setAiResult(data.result);
+    notify('AI material calculation complete');
+  } catch (error: any) {
+    notify(error?.message || 'AI calculation failed');
+  } finally {
+    setAiLoading(false);
+  }
+}
   useEffect(() => { load(); }, [siteId]);
 
   async function load() {
@@ -432,7 +465,38 @@ function BOQPlanTab({ siteId, siteName, notify }: { siteId: string; siteName: st
             value={newItem.boq_quantity} onChange={(e) => setNewItem({ ...newItem, boq_quantity: e.target.value })} />
           <button onClick={addWorkItem} className="bg-[#c9a15a] text-[#2b2622] hover:bg-[#d8b26e] transition-colors font-medium px-4 py-2.5 rounded-lg text-sm">
             Add & Calculate
-          </button>
+          </button><button
+  onClick={async () => {
+    const boqText = `${newItem.label || 'BOQ work item'} - Quantity: ${newItem.boq_quantity}`;
+    if (!newItem.boq_quantity) {
+      notify('Enter BOQ quantity first');
+      return;
+    }
+
+    try {
+      const res = await fetch('/api/ai-materials', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ boqText }),
+      });
+
+      const data = await res.json();
+
+      if (!res.ok || !data.success) {
+        notify(data.error || 'AI material calculation failed');
+        return;
+      }
+
+      console.log('AI MATERIAL RESULT:', data.result);
+      alert(JSON.stringify(data.result, null, 2));
+    } catch (error) {
+      notify('Could not connect to AI');
+    }
+  }}
+  className="bg-[#2b2622] text-[#f0ead9] hover:bg-[#403a34] transition-colors font-medium px-4 py-2.5 rounded-lg text-sm"
+>
+  ✨ AI Materials
+</button>
         </div>
         {workTypes.length === 0 && (
           <p className="text-xs text-rose-700 mt-2">
